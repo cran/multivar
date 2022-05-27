@@ -9,6 +9,8 @@ est_base_weight_mat <- function(
   lassotype, 
   weightest){
   
+  adapower <- 1
+  
  if (lassotype == "standard"){
    
    # w_mat <- matrix(1, nrow = ncol(dat@bk[[1]]), ncol = ncol(dat@A))
@@ -42,7 +44,45 @@ est_base_weight_mat <- function(
        b_ols_i
      })
      
-   } else if (weightest == "VAR") {
+   } else if (weightest == "lasso") {
+     
+     b_w  <- lapply(seq_along(Ak),function(g){
+        lasso.fit <- glmnet::cv.glmnet(
+          diag(ncol(Ak[[g]])) %x% Ak[[g]], 
+          as.vector(bk[[g]]), 
+          family = "gaussian", 
+          alpha = 1, 
+          standardize = FALSE, 
+          nfolds = 10
+        )
+        t(matrix(as.vector(predict(
+          lasso.fit, 
+          diag(ncol(Ak[[g]])) %x% Ak[[g]], 
+          type="coefficients", 
+          s="lambda.1se"
+        ))[-1], ncol(Ak[[g]]), ncol(Ak[[g]])))
+     })
+     
+   } else if (weightest == "ridge") {
+     
+     b_w  <- lapply(seq_along(Ak),function(g){
+        lasso.fit <- glmnet::cv.glmnet(
+          diag(ncol(Ak[[g]])) %x% Ak[[g]], 
+          as.vector(bk[[g]]), 
+          family = "gaussian", 
+          alpha = 0, 
+          standardize = FALSE, 
+          nfolds = 10
+        )
+        t(matrix(as.vector(predict(
+          lasso.fit, 
+          diag(ncol(Ak[[g]])) %x% Ak[[g]], 
+          type="coefficients", 
+          s="lambda.1se"
+        ))[-1], ncol(Ak[[g]]), ncol(Ak[[g]])))
+     })
+     
+   } else if (weightest == "var") {
      
      b_w  <- lapply(seq_along(Ak),function(g){
         fit<- vars::VAR(as.matrix(Ak[[g]]), p=1, type="none")$varresult
@@ -84,7 +124,7 @@ est_base_weight_mat <- function(
     if(length(Ak) == 1){
       
       v_list <- lapply(seq_along(Ak), function(i){
-        v <- 1/abs(b_w[[i]])^1
+        v <- 1/abs(b_w[[i]])^adapower
         v[is.infinite(v)] <- 1e10
         v
       })
@@ -97,7 +137,7 @@ est_base_weight_mat <- function(
       b_med <- apply(a, 1:2, median)
       
       v_list <- lapply(seq_along(Ak), function(i){
-        v <- 1/abs(b_w[[i]] - b_med)^1
+        v <- 1/abs(b_w[[i]] - b_med)^adapower
         v[is.infinite(v)] <- 1e10
         v
       })
@@ -125,7 +165,8 @@ est_base_weight_mat <- function(
   } else {
     
     for(r in 1:length(ratios)){
-      W[,(d[1]+1):ncol(W[,,1]),r] <- W[,(d[1]+1):ncol(W[,,1]),r] * ratios[r]
+     #W[,(d[1]+1):ncol(W[,,1]),r] <- W[,(d[1]+1):ncol(W[,,1]),r] * ratios[r]
+      W[,1:(d[1]),r] <- W[,1:(d[1]),r] * ratios[r]
     }
     
   }

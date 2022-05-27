@@ -1,36 +1,19 @@
 #' @export
-cv_multivar <- function(B, Z, Y, W, Ak, k, d, lambda1, ratios, t1, t2, eps,intercept=FALSE){
-
-  t1  <- t1[1]
-  t2  <- t2[1]
-  t3k <- cumsum(unlist(lapply(Ak,function(x){nrow(x)})))
-  t2k <- c(t2, c(t3k+t2)[-k])
-  t1k <- c(t1, c(t3k+t1)[-k])
-  t0k <- c(1, c(t3k+1)[-k])
+cv_multivar <- function(B, Z, Y, W, Ak, bk, k, d, lambda1, lambda2, ratios, t1, t2, eps,intercept=FALSE, cv, nfolds){
   
-  rw_n <- length(c(1:(t2-t1)))
-  MSFE <- matrix(NA, nrow = rw_n, ncol = nrow(lambda1)*length(ratios))
-  pb   <- txtProgressBar(1, rw_n, style=3)
+  if(cv == "rolling"){
+    
+    res <- cv_rolling(B, Z, Y, W, Ak, k, d, lambda1, ratios, t1, t2, eps,intercept=FALSE, cv, nfolds)
   
-  for(rw_idx in 1:rw_n){
+  } else if (cv == "blocked"){
     
-    setTxtProgressBar(pb, rw_idx)
-    
-    train_idx <- unlist(lapply(1:k,function(a){c(t0k[a]:(t1k[a]+(rw_idx-1)))}))
-    test_idx  <- unlist(lapply(1:k,function(a){c(t1k[a]+rw_idx)}))
-    
-    #cat("index: ", rw_idx, "\n")
-    #cat("test : ", train_idx, "\n")
-    #cat("train: ", test_idx, "\n\n")
+    res <- cv_blocked(B, Z, Y, W, Ak, k, d, lambda1, ratios, t1, t2, eps,intercept=FALSE, cv, nfolds)
   
-    beta <- wlasso(B, Z[,train_idx], Y[,train_idx], W, k, d, lambda1,eps,intercept)
-
-    # Calculate h-step MSFE for each penalty parameter
-    for (ii in 1:dim(beta)[3]) {
-      MSFE[rw_idx,ii] <- norm2(Y[,test_idx,drop=F]- beta[,-1,ii] %*% Z[,test_idx,drop=F] )^2
-    }
+  } else {
+    
+    stop(paste0("multivar ERROR: ", cv, " is not a supported cross-validation method."))
   }
-
-  return(list(beta,MSFE))
+  
+  return(res)
   
 }

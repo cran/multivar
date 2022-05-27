@@ -8,12 +8,12 @@ fit_canonical_var <- function(A, p = 1, type = "none"){
     colnames(transition_mat) <-  rownames(transition_mat) <- colnames(A)
     
     transition_mat_pval <- as.matrix(do.call("rbind",lapply(seq_along(colnames(A)), function(x) {
-      summary(fit)$varresult[[x]]$coefficients[,"Pr(>|t|)"]
+       coef(fit)[[x]][,"Pr(>|t|)"]
     })))
     colnames(transition_mat_pval) <-  rownames(transition_mat_pval) <- colnames(A)
     
     transition_mat_thresh <- as.matrix(do.call("rbind",lapply(seq_along(colnames(A)), function(x) {
-      summary(fit)$varresult[[x]]$coefficients[,"Pr(>|t|)"] < 0.05
+      coef(fit)[[x]][,"Pr(>|t|)"] < 0.05
     })))
     colnames(transition_mat_thresh) <-  rownames(transition_mat_thresh) <- colnames(A)
     

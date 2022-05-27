@@ -1,4 +1,4 @@
-breakup_transition <- function(B, Ak, ndk, intercept){
+breakup_transition <- function(B, Ak, ndk, intercept, thresh){
   
   if(!intercept){ B <- B[,-1] } 
   
@@ -7,6 +7,7 @@ breakup_transition <- function(B, Ak, ndk, intercept){
     common_mat  <- B
     unique_mats <- list(B)
     total_mats  <- list(B)
+    diff_mats   <- NULL
     
   } else {
     
@@ -27,9 +28,12 @@ breakup_transition <- function(B, Ak, ndk, intercept){
       mat
     })
     
+    
     # total mats
     total_mats <- lapply(unique_mats, function(mat){
-      mat + common_mat
+      g <- mat + common_mat;
+      g[abs(g) < thresh] <- 0
+      g
     })
     
   }
@@ -40,7 +44,6 @@ breakup_transition <- function(B, Ak, ndk, intercept){
     unique = unique_mats,
     total  = total_mats
   )
-  
   return(res)
 }
   

@@ -37,13 +37,17 @@ check.multivar <- function(object){
 #' @slot depth Numeric. Depth of grid construction. Default is 1000.
 #' @slot window Numeric. Size of rolling window.
 #' @slot standardize Logical. Default is true. Whether to standardize the individual data.
-#' @slot weightest Character. Default is "mlr" for multiple linear regression. "sls" for simple linear regression also available. How to estimate the first-stage weights.
+#' @slot weightest Character. How to estimate the first-stage weights. Default is "lasso". Other options include "ridge", "ols" and "var". 
 #' @slot canonical Logical. Default is false. If true, individual datasets are fit to a VAR(1) model.
 #' @slot threshold Logical. Default is false. If true, and canonical is true, individual transition matrices are thresholded based on significance.
 #' @slot lassotype Character. Default is "adaptive". Choices are "standard" or "adaptive" lasso.
 #' @slot intercept Logical. Default is FALSE. 
 #' @slot W Matrix. Default is NULL. 
 #' @slot ratios Numeric vector. Default is NULL. 
+#' @slot cv Character. Default is "blocked" for k-folds blocked cross-validation. rolling window cross-validation also available using "rolling".  If "blocked" is selected the nfolds argument should be specified.
+#' @slot nfolds Numeric. The number of folds for use with "blocked" cross-validation.
+#' @slot thresh Numeric. Post-estimation threshold for setting the individual-level coefficients to zero if their absolute value is smaller than the value provided. Default is zero.
+#' @slot lamadapt Logical. Should the lambdas be calculated adaptively. Default is FALSE.
 #' @details To construct an object of class multivar, use the function \code{\link{constructModel}}
 #' @seealso \code{\link{constructModel}}
 #' @export
@@ -82,7 +86,11 @@ setClass(
         lassotype = "character",
         intercept = "logical",
         W = "array",
-        ratios = "numeric"
+        ratios = "numeric",
+        cv = "character",
+        nfolds = "numeric",
+        thresh = "numeric",
+        lamadapt = "logical"
         ),validity=check.multivar
     )
 
@@ -109,6 +117,10 @@ setClass(
 #' @param intercept Logical. Default is FALSE. 
 #' @param W Matrix. Default is NULL. 
 #' @param ratios Numeric vector. Default is NULL. 
+#' @param cv Character. Default is "rolling" for rolling window cross-validation. "blocked" is also available for blocked folds cross-validation. If "blocked" is selected the nfolds argument should bbe specified.
+#' @param nfolds Numeric. The number of folds for use with "blocked" cross-validation.
+#' @param thresh Numeric. Post-estimation threshold for setting the individual-level coefficients to zero if their absolute value is smaller than the value provided. Default is zero.
+#' @param lamadapt Logical. Should the lambdas be calculated adaptively. Default is FALSE.
 #' @examples
 #' 
 #' sim  <- multivar_sim(
@@ -119,7 +131,7 @@ setClass(
 #'   prop_fill_ind = 0.1, # proportion of paths unique
 #'   lb = 0.1,  # lower bound on coefficient magnitude
 #'   ub = 0.9,  # upper bound on coefficient magnitude
-#'   sigma = diag(1,3) # noise
+#'   sigma = diag(3) # noise
 #' )
 #' 
 #' plot_sim(sim, plot_type = "common")
@@ -140,13 +152,17 @@ constructModel <- function( data = NULL,
                             tol=1e-4,
                             window = 1,
                             standardize = T,
-                            weightest = "ols",
+                            weightest = "lasso",
                             canonical = FALSE,
                             threshold = FALSE,
                             lassotype = "adaptive",
                             intercept = FALSE,
                             W = NULL,
-                            ratios = NULL){
+                            ratios = NULL,
+                            cv = "blocked",
+                            nfolds = 10,
+                            thresh = 0,
+                            lamadapt = FALSE){
   
   if( lag != 1 ){
     stop("multivar ERROR: Currently only lag of order 1 is supported.")
@@ -183,33 +199,36 @@ constructModel <- function( data = NULL,
   Ak <- lapply(dat, "[[", "A")
   bk <- lapply(dat, "[[", "b")
   Hk <- lapply(dat, "[[", "H")
+  
   if(k == 1) {
      A  <- Matrix(Ak[[1]], sparse = TRUE)
   } else {
      A  <- sparseMatrix(i = is, j = js, x = xs, index1=FALSE, dims = c(nz,p*(k+1)))
   }
- 
+  
   b  <- as.matrix(do.call(rbind, bk))
   H  <- as.matrix(do.call(rbind, Hk))
   
   # here we also assume all individuals have the same number
   # of timepoints. (zff 2021-09-15)
   
-  if(is.null(t1)){
-    t1 <- nrow(Ak[[1]]) - floor(.33*(nrow(Ak[[1]]))) 
-  }
+  #if(is.null(t1)){
+    #t1 <- nrow(Ak[[1]]) - floor(.33*(nrow(Ak[[1]]))) 
+  #  t1 <- nrow(Ak[[1]]) - floor(.5*(nrow(Ak[[1]]))) 
+  #}
   
-  if(is.null(t2)){
-    t2 <- nrow(Ak[[1]])
-  }
+  #(is.null(t2)){
+  #  t2 <- nrow(Ak[[1]])
+  #}
   
   # adjust t1 and t2 by max lag to account for initialization
-  t1 <- t1 - lag
-  t2 <- t2 - lag
+  #t1 <- t1 - lag
+  #t2 <- t2 - lag
   
   # what indices do we need for forecasting
   t1k <- unlist(lapply(dat, function(x){floor(nrow(x$b)/3)}))
-  t2k <- unlist(lapply(dat, function(x){floor(2*nrow(x$b)/3)}))
+  #t2k <- unlist(lapply(dat, function(x){floor(2*nrow(x$b)/3)}))
+  t2k <- unlist(lapply(dat, function(x){nrow(x$b)}))
   ntk <- unlist(lapply(dat, function(x){nrow(x$b)})) # number tps
   ndk <- unlist(lapply(dat, function(x){ncol(x$b)})) # number cols
   
@@ -220,11 +239,20 @@ constructModel <- function( data = NULL,
   # t2s <- t1e+1
   # t1e <- cumsum(t1k)
   
-  # construct ratios, and initialize vectors for lambda1, lambda2.
-  ratios <- rev(round(exp(seq(log(k/depth),log(k),length.out = nlambda1)), digits = 10))
-  lambda1 <- matrix(0, nlambda1,length(ratios))
-  lambda2 <- matrix(0, nlambda2,length(ratios))
-  
+  if(is.null(lambda1) & is.null(lambda2)){
+    # construct ratios, and initialize vectors for lambda1, lambda2.
+    ratios <- rev(round(exp(seq(log(k/depth),log(k),length.out = nlambda1)), digits = 10))
+    lambda1 <- matrix(0, nlambda1,length(ratios))
+    lambda2 <- matrix(0, nlambda2,length(ratios))
+  } else {
+    nlambda1 <- length(lambda1)
+    nlambda2 <- length(lambda2)
+    lambda1 <- matrix(lambda1, nrow = 1)
+    lambda2 <- matrix(lambda2, nrow = 1)
+    ratios <- c(0)
+  }
+
+
   # construct W
   W <- matrix(1, nrow = ncol(bk[[1]]), ncol = ncol(A))
   
@@ -258,7 +286,11 @@ constructModel <- function( data = NULL,
     lassotype = lassotype,
     intercept = intercept,
     W = W,
-    ratios = ratios
+    ratios = ratios,
+    cv = cv,
+    nfolds = nfolds,
+    thresh = thresh,
+    lamadapt = lamadapt
   )
 
   return(obj)
@@ -306,36 +338,18 @@ setMethod("show","multivar",function(object){
 #' # example 1 (run)
 #' sim1  <- multivar_sim(
 #'   k = 2,  # individuals
-#'   d = 3,  # number of variables
+#'   d = 5,  # number of variables
 #'   n = 20, # number of timepoints
 #'   prop_fill_com = 0.1, # proportion of paths common
-#'   prop_fill_ind = 0.1, # proportion of paths unique
+#'   prop_fill_ind = 0.05, # proportion of paths unique
 #'   lb = 0.1,  # lower bound on coefficient magnitude
-#'   ub = 0.9,  # upper bound on coefficient magnitude
-#'   sigma = diag(1,3) # noise
+#'   ub = 0.5,  # upper bound on coefficient magnitude
+#'   sigma = diag(5) # noise
 #' )
 #' 
-#' model1 <- constructModel(data = sim1$data, weightest = "ols")
+#' model1 <- constructModel(data = sim1$data)
 #' fit1 <- multivar::cv.multivar(model1)
 #'
-#' \dontrun{
-#' 
-#' # example 2 (don't run)
-#' sim2  <- multivar_sim(
-#'   k = 10,  # individuals
-#'   d = 10,  # number of variables
-#'   n = 100, # number of timepoints
-#'   prop_fill_com = 0.1, # proportion of paths common
-#'   prop_fill_ind = 0.1, # proportion of paths unique
-#'   lb = 0.1,  # lower bound on coefficient magnitude
-#'   ub = 0.9,  # upper bound on coefficient magnitude
-#'   sigma = diag(1,10) # noise
-#' )
-#' 
-#' model2 <- constructModel(data = sim2$data, weightest = "ols")
-#' fit2 <- cv.multivar(model2)
-#'
-#' }
 #'
 #' @export
 setGeneric(name = "cv.multivar",def=function(object){standardGeneric("cv.multivar")})
@@ -355,7 +369,6 @@ setMethod(f = "cv.multivar", signature = "multivar",definition = function(object
   }
   
   
-  
   object@W <- est_base_weight_mat(
     object@W,
     object@Ak,
@@ -367,6 +380,7 @@ setMethod(f = "cv.multivar", signature = "multivar",definition = function(object
     object@weightest
   )
   
+ 
   object@lambda1 <- lambda_grid(
     B,
     object@depth, 
@@ -376,23 +390,30 @@ setMethod(f = "cv.multivar", signature = "multivar",definition = function(object
     object@W, 
     object@k,
     object@tol,
-    object@intercept
+    object@intercept,
+    object@lamadapt
   ) 
-    
+  
+
+  
   fit <- cv_multivar(
     B, 
     t(as.matrix(object@A)), 
     t(as.matrix(object@b)), 
     object@W, 
     object@Ak,
+    object@bk,
     object@k, 
     object@d, 
     object@lambda1, 
+    object@lambda2, 
     object@ratios, 
     object@t1, 
     object@t2, 
     eps = 1e-3,
-    object@intercept
+    object@intercept,
+    object@cv,
+    object@nfolds
   )
   
 
@@ -400,7 +421,8 @@ setMethod(f = "cv.multivar", signature = "multivar",definition = function(object
     fit[[1]][,,which.min(colMeans(fit[[2]]))], 
     object@Ak, 
     object@ndk, 
-    object@intercept
+    object@intercept,
+    object@thresh
   )
   
   results <- list(
@@ -430,13 +452,13 @@ setMethod(f = "cv.multivar", signature = "multivar",definition = function(object
 #' # example 1 (run)
 #' sim1  <- multivar_sim(
 #'   k = 2,  # individuals
-#'   d = 3,  # number of variables
+#'   d = 5,  # number of variables
 #'   n = 20, # number of timepoints
 #'   prop_fill_com = 0.1, # proportion of paths common
-#'   prop_fill_ind = 0.1, # proportion of paths unique
+#'   prop_fill_ind = 0.05, # proportion of paths unique
 #'   lb = 0.1,  # lower bound on coefficient magnitude
-#'   ub = 0.9,  # upper bound on coefficient magnitude
-#'   sigma = diag(1,3) # noise
+#'   ub = 0.5,  # upper bound on coefficient magnitude
+#'   sigma = diag(5) # noise
 #' )
 #' 
 #' model1 <- constructModel(data = sim1$data, weightest = "ols")
@@ -464,9 +486,6 @@ setMethod(f = "canonical.multivar", signature = "multivar",definition = function
 
   return(list(mats = res))
 })
-
-
-
 
 
 

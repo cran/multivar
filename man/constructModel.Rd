@@ -18,13 +18,17 @@ constructModel(
   tol = 1e-04,
   window = 1,
   standardize = T,
-  weightest = "ols",
+  weightest = "lasso",
   canonical = FALSE,
   threshold = FALSE,
   lassotype = "adaptive",
   intercept = FALSE,
   W = NULL,
-  ratios = NULL
+  ratios = NULL,
+  cv = "blocked",
+  nfolds = 10,
+  thresh = 0,
+  lamadapt = FALSE
 )
 }
 \arguments{
@@ -67,6 +71,14 @@ constructModel(
 \item{W}{Matrix. Default is NULL.}
 
 \item{ratios}{Numeric vector. Default is NULL.}
+
+\item{cv}{Character. Default is "rolling" for rolling window cross-validation. "blocked" is also available for blocked folds cross-validation. If "blocked" is selected the nfolds argument should bbe specified.}
+
+\item{nfolds}{Numeric. The number of folds for use with "blocked" cross-validation.}
+
+\item{thresh}{Numeric. Post-estimation threshold for setting the individual-level coefficients to zero if their absolute value is smaller than the value provided. Default is zero.}
+
+\item{lamadapt}{Logical. Should the lambdas be calculated adaptively. Default is FALSE.}
 }
 \description{
 Construct an object of class multivar
@@ -81,7 +93,7 @@ sim  <- multivar_sim(
   prop_fill_ind = 0.1, # proportion of paths unique
   lb = 0.1,  # lower bound on coefficient magnitude
   ub = 0.9,  # upper bound on coefficient magnitude
-  sigma = diag(1,3) # noise
+  sigma = diag(3) # noise
 )
 
 plot_sim(sim, plot_type = "common")

@@ -55,7 +55,7 @@ To construct an object of class multivar, use the function \code{\link{construct
 
 \item{\code{standardize}}{Logical. Default is true. Whether to standardize the individual data.}
 
-\item{\code{weightest}}{Character. Default is "mlr" for multiple linear regression. "sls" for simple linear regression also available. How to estimate the first-stage weights.}
+\item{\code{weightest}}{Character. How to estimate the first-stage weights. Default is "lasso". Other options include "ridge", "ols" and "var".}
 
 \item{\code{canonical}}{Logical. Default is false. If true, individual datasets are fit to a VAR(1) model.}
 
@@ -68,6 +68,14 @@ To construct an object of class multivar, use the function \code{\link{construct
 \item{\code{W}}{Matrix. Default is NULL.}
 
 \item{\code{ratios}}{Numeric vector. Default is NULL.}
+
+\item{\code{cv}}{Character. Default is "blocked" for k-folds blocked cross-validation. rolling window cross-validation also available using "rolling".  If "blocked" is selected the nfolds argument should be specified.}
+
+\item{\code{nfolds}}{Numeric. The number of folds for use with "blocked" cross-validation.}
+
+\item{\code{thresh}}{Numeric. Post-estimation threshold for setting the individual-level coefficients to zero if their absolute value is smaller than the value provided. Default is zero.}
+
+\item{\code{lamadapt}}{Logical. Should the lambdas be calculated adaptively. Default is FALSE.}
 }}
 
 \seealso{
