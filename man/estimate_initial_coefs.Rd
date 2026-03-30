@@ -20,7 +20,8 @@ estimate_initial_coefs(
   nfolds,
   lambda_choice = "lambda.min",
   common_effects = TRUE,
-  common_tvp_effects = TRUE
+  common_tvp_effects = TRUE,
+  maity_opts = list()
 )
 }
 \arguments{
@@ -55,6 +56,8 @@ estimate_initial_coefs(
 \item{common_effects}{Logical. Whether to include common effects in TVP models.}
 
 \item{common_tvp_effects}{Logical. Whether to include common TVP effects (k>1 only).}
+
+\item{maity_opts}{List. Options for Maity et al. (2022) MrLasso initial estimation.}
 }
 \value{
 A list containing:

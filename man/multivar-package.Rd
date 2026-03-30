@@ -3,9 +3,9 @@
 \docType{package}
 \name{multivar-package}
 \alias{multivar-package}
-\title{multivar: Penalized Estimation of Multiple-Subject Vector Autoregressive (Multi-VAR) Models}
+\title{multivar: Penalized Estimation of Multiple-Subject Vector Autoregressive Models}
 \description{
-Functions for simulating, estimating and forecasting stationary Vector Autoregressive (VAR) models for multiple subject data using the penalization.
+Simulate, estimate, and forecast vector autoregressive (VAR) models for multiple-subject data using structured penalization. Decomposes dynamics into shared (common) and subject-specific (unique) components via adaptive LASSO with FISTA optimization. Supports cross-validation and extended BIC model selection and subgroup detection, and time-varying parameters.
 
 \pkg{multivar} is an R package for simulating, estimating and forecasting stationary Vector Autoregressive (VAR) models for multiple subject data using the penalized multi-VAR framework.
 }
